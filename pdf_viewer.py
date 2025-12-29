@@ -57,6 +57,14 @@ class PDFViewer(tk.Canvas):
         self.drag_start_y = 0
         self.drag_original_point = None  # Original PDF coordinates of point being dragged
         
+        # Adding point state
+        self.adding_point = False  # Whether we're in "add point" mode
+        self.add_point_insert_index = None  # Index after which to insert the new point
+        self.add_point_reference_point = None  # Reference point (x, y) to align with
+        self.add_point_preview_pos = None  # Current preview position (pdf_x, pdf_y)
+        # Preview while creating a new line (from last clicked point to cursor)
+        self.creating_preview_pos = None
+        
         # Bind events
         self.bind("<Button-1>", self.on_click)
         self.bind("<Double-Button-1>", self.on_double_click)
@@ -248,6 +256,48 @@ class PDFViewer(tk.Canvas):
             # Draw deviation indicators (using scaled points)
             if node.deviations:
                 self.draw_deviation_indicators(draw, node, scaled_points, render_scale)
+        
+        # Draw preview line when creating a new line (preview from last point to cursor)
+        if self.creating_line and self.current_node and self.creating_preview_pos and len(self.current_node.points) >= 1:
+            ref_x, ref_y = self.current_node.points[-1]
+            preview_x, preview_y = self.creating_preview_pos
+            scaled_ref = (int(ref_x * render_scale), int(ref_y * render_scale))
+            scaled_preview = (int(preview_x * render_scale), int(preview_y * render_scale))
+            preview_color = (255, 165, 0, 200)  # Orange with transparency
+            preview_thickness = max(2, int(2 * render_scale))
+            # Draw a dashed-looking preview by drawing a semi-transparent line
+            draw.line([scaled_ref, scaled_preview], fill=preview_color, width=preview_thickness)
+            # Draw preview endpoint
+            point_size = max(5, int(5 * render_scale))
+            draw.ellipse([
+                scaled_preview[0] - point_size,
+                scaled_preview[1] - point_size,
+                scaled_preview[0] + point_size,
+                scaled_preview[1] + point_size
+            ], fill=(255, 165, 0, 255), outline=(255, 140, 0, 255), width=2)
+
+        # Draw preview line when adding a point
+        if self.adding_point and self.add_point_preview_pos and self.add_point_reference_point:
+            ref_x, ref_y = self.add_point_reference_point
+            preview_x, preview_y = self.add_point_preview_pos
+            
+            # Scale coordinates
+            scaled_ref = (int(ref_x * render_scale), int(ref_y * render_scale))
+            scaled_preview = (int(preview_x * render_scale), int(preview_y * render_scale))
+            
+            # Draw temporary preview line in a distinct color (e.g., orange/yellow)
+            preview_color = (255, 165, 0, 200)  # Orange with transparency
+            preview_thickness = max(2, int(2 * render_scale))
+            draw.line([scaled_ref, scaled_preview], fill=preview_color, width=preview_thickness)
+            
+            # Draw preview point
+            point_size = max(5, int(5 * render_scale))
+            draw.ellipse([
+                scaled_preview[0] - point_size,
+                scaled_preview[1] - point_size,
+                scaled_preview[0] + point_size,
+                scaled_preview[1] + point_size
+            ], fill=(255, 165, 0, 255), outline=(255, 140, 0, 255), width=2)
     
     def draw_arrow(self, draw, start, end, color, thickness):
         """Draw an arrow at the end of a line."""
@@ -489,6 +539,11 @@ class PDFViewer(tk.Canvas):
                 self.current_node.points.append((pdf_x, pdf_y))
             
             self.render_page()
+        elif self.adding_point:
+            # Confirm adding the point at preview position
+            if self.add_point_preview_pos:
+                pdf_x, pdf_y = self.add_point_preview_pos
+                self.confirm_add_point(pdf_x, pdf_y)
         elif self.editing_node:
             # Check if clicking on a point to drag
             pdf_x, pdf_y = self.screen_to_pdf_coords(event.x, event.y)
@@ -640,8 +695,8 @@ class PDFViewer(tk.Canvas):
                 # Right-click on a point: show menu to edit/remove
                 self.show_point_context_menu(event.x, event.y, point_index)
             else:
-                # Right-click on the line: add a new point
-                self.add_point_to_line(pdf_x, pdf_y)
+                # Right-click on the line: start adding a new point
+                self.start_adding_point(pdf_x, pdf_y)
         else:
             # Show context menu
             pdf_x, pdf_y = self.screen_to_pdf_coords(event.x, event.y)
@@ -651,7 +706,16 @@ class PDFViewer(tk.Canvas):
     
     def on_motion(self, event):
         """Handle mouse motion."""
-        if not self.creating_line:
+        if self.creating_line:
+            # Update preview position for line creation (last point -> cursor)
+            pdf_x, pdf_y = self.screen_to_pdf_coords(event.x, event.y)
+            self.creating_preview_pos = (pdf_x, pdf_y)
+            self.quick_redraw()
+        elif self.adding_point:
+            # Update preview position with constraint
+            pdf_x, pdf_y = self.screen_to_pdf_coords(event.x, event.y)
+            self.update_add_point_preview(pdf_x, pdf_y)
+        elif not self.creating_line:
             pdf_x, pdf_y = self.screen_to_pdf_coords(event.x, event.y)
             hover_node = self.find_node_at_point(pdf_x, pdf_y)
             if hover_node != self.hover_node:
@@ -663,6 +727,8 @@ class PDFViewer(tk.Canvas):
         if event.keysym == 'Escape':
             if self.creating_line:
                 self.end_line_creation()
+            elif self.adding_point:
+                self.cancel_adding_point()
             elif self.editing_node:
                 self.end_editing()
         elif event.keysym == 'Prior':  # Page Up
@@ -855,6 +921,7 @@ class PDFViewer(tk.Canvas):
         self.creating_line = True
         self.current_line_points = []
         self.current_node = None
+        self.creating_preview_pos = None
         if self.parent:
             self.parent.on_line_creation_started()
     
@@ -867,6 +934,7 @@ class PDFViewer(tk.Canvas):
         self.creating_line = False
         self.current_line_points = []
         self.current_node = None
+        self.creating_preview_pos = None
         if self.parent:
             self.parent.on_line_creation_ended()
         self.render_page()
@@ -1098,7 +1166,7 @@ class PDFViewer(tk.Canvas):
             self.render_page()
     
     def add_point_to_line(self, pdf_x, pdf_y):
-        """Add a new point to the line at the specified location."""
+        """Add a new point to the line at the specified location (legacy method, kept for compatibility)."""
         if not self.editing_node:
             return
         
@@ -1109,6 +1177,73 @@ class PDFViewer(tk.Canvas):
             # Insert the new point
             self.editing_node.points.insert(insert_index, (pdf_x, pdf_y))
             self.render_page()
+    
+    def start_adding_point(self, pdf_x, pdf_y):
+        """Start adding a new point to the line."""
+        if not self.editing_node:
+            return
+        
+        # Find the segment closest to the click point
+        insert_index = self.find_segment_for_point(pdf_x, pdf_y, self.editing_node, tolerance=25)
+        
+        if insert_index is not None:
+            # Determine reference point (the point after which we're inserting)
+            # This is the point we'll align with (same X or same Y)
+            # insert_index is the index AFTER which to insert, so the reference is the point at insert_index
+            if insert_index < len(self.editing_node.points):
+                # Use the point after the insertion point (the "last" point in the sequence)
+                self.add_point_reference_point = self.editing_node.points[insert_index]
+            else:
+                # Inserting at the end, use the last point
+                self.add_point_reference_point = self.editing_node.points[-1] if self.editing_node.points else None
+            
+            if self.add_point_reference_point:
+                self.add_point_insert_index = insert_index
+                self.adding_point = True
+                self.add_point_preview_pos = (pdf_x, pdf_y)
+                self.update_add_point_preview(pdf_x, pdf_y)
+    
+    def update_add_point_preview(self, pdf_x, pdf_y):
+        """Update the preview position for adding a point, with constraint."""
+        if not self.adding_point or not self.add_point_reference_point:
+            return
+        
+        ref_x, ref_y = self.add_point_reference_point
+        
+        # Constrain to same X or same Y coordinate
+        # Choose the one that's closer to the mouse position
+        dist_x = abs(pdf_x - ref_x)
+        dist_y = abs(pdf_y - ref_y)
+        
+        if dist_x < dist_y:
+            # Align X coordinate
+            constrained_x = ref_x
+            constrained_y = pdf_y
+        else:
+            # Align Y coordinate
+            constrained_x = pdf_x
+            constrained_y = ref_y
+        
+        self.add_point_preview_pos = (constrained_x, constrained_y)
+        self.quick_redraw()  # Update preview
+    
+    def confirm_add_point(self, pdf_x, pdf_y):
+        """Confirm and add the point at the preview position."""
+        if not self.adding_point or self.add_point_insert_index is None:
+            return
+        
+        # Insert the new point
+        self.editing_node.points.insert(self.add_point_insert_index, (pdf_x, pdf_y))
+        self.cancel_adding_point()
+        self.render_page()
+    
+    def cancel_adding_point(self):
+        """Cancel adding point mode."""
+        self.adding_point = False
+        self.add_point_insert_index = None
+        self.add_point_reference_point = None
+        self.add_point_preview_pos = None
+        self.render_page()
     
     def start_editing(self, node):
         """Start editing a node's points."""
@@ -1129,6 +1264,7 @@ class PDFViewer(tk.Canvas):
         """Show context menu for a node."""
         menu = tk.Menu(self, tearoff=0)
         menu.add_command(label="Edit Properties", command=lambda: self.parent.edit_node_properties(node))
+        menu.add_command(label="Make Orthogonal", command=lambda: self.make_node_orthogonal(node))
         menu.add_command(label="Add Deviation", command=lambda: self.parent.add_deviation(node))
         menu.add_command(label="Manage Deviations", command=lambda: self.parent.manage_deviations_for_node(node))
         menu.add_separator()
@@ -1143,6 +1279,46 @@ class PDFViewer(tk.Canvas):
             self.render_page()
             if self.parent:
                 self.parent.on_node_deselected()
+
+    def make_node_orthogonal(self, node):
+        """Adjust the node's points so each segment is strictly horizontal or vertical.
+
+        For each point after the first, set either its x or y coordinate equal to the
+        previous point's corresponding coordinate depending on which delta is smaller.
+        Coordinates are rounded to integers.
+        """
+        if not node or not node.points or len(node.points) < 2:
+            return
+
+        new_points = [ (int(round(node.points[0][0])), int(round(node.points[0][1]))) ]
+
+        for i in range(1, len(node.points)):
+            prev_x, prev_y = new_points[i-1]
+            cur_x, cur_y = node.points[i]
+            # Determine which axis to lock (choose the smaller delta)
+            dx = abs(cur_x - prev_x)
+            dy = abs(cur_y - prev_y)
+
+            if dx < dy:
+                # Lock X to previous X
+                new_x = prev_x
+                new_y = int(round(cur_y))
+            else:
+                # Lock Y to previous Y
+                new_x = int(round(cur_x))
+                new_y = prev_y
+
+            new_points.append((int(new_x), int(new_y)))
+
+        # Replace points and redraw
+        node.points = new_points
+        # Keep selection and editing state consistent
+        if node == self.selected_node:
+            self.selected_node = node
+        if node == self.editing_node:
+            self.editing_node = node
+
+        self.render_page()
     
     def go_to_page(self, page_number):
         """Go to a specific page."""

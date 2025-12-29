@@ -1,0 +1,130 @@
+{
+  "pdf_path": "C:/Users/drsun/OneDrive/Documents/MyPython/VisualHAZOP/CHS_PFD.pdf",
+  "nodes": [
+    {
+      "name": "LNG Loading",
+      "color": "#0080ff",
+      "thickness": 4,
+      "transparency": 0.7,
+      "has_arrow": true,
+      "font_size": 12,
+      "points": [
+        [
+          778,
+          30
+        ],
+        [
+          632,
+          30
+        ],
+        [
+          632,
+          110
+        ],
+        [
+          602,
+          111
+        ],
+        [
+          603,
+          224
+        ],
+        [
+          444,
+          224
+        ],
+        [
+          445,
+          262
+        ],
+        [
+          527,
+          262
+        ],
+        [
+          526,
+          559
+        ]
+      ],
+      "deviations": [
+        {
+          "deviation": "Less flow",
+          "causes": [
+            "LL101 fail and close",
+            "LL408 fail and close"
+          ],
+          "consequence": "Delayed operation",
+          "safeguards": [],
+          "recommendations": [],
+          "comments": "",
+          "minimized": false
+        }
+      ],
+      "page_number": 0
+    },
+    {
+      "name": "BOG return",
+      "color": "#ff8040",
+      "thickness": 4,
+      "transparency": 0.7,
+      "has_arrow": true,
+      "font_size": 12,
+      "points": [
+        [
+          494,
+          513
+        ],
+        [
+          495,
+          290
+        ],
+        [
+          375.3143143143143,
+          288.84284284284286
+        ],
+        [
+          375,
+          187
+        ],
+        [
+          574.3713713713714,
+          187.37137137137137
+        ],
+        [
+          573,
+          71
+        ],
+        [
+          779,
+          70
+        ]
+      ],
+      "deviations": [
+        {
+          "deviation": "More flow",
+          "causes": [
+            "Tank in a high temperature"
+          ],
+          "consequence": "Larger BOG returning to the Shore",
+          "safeguards": [],
+          "recommendations": [],
+          "comments": "",
+          "minimized": false
+        },
+        {
+          "deviation": "Less flow",
+          "causes": [
+            "LV101 fail and close",
+            "Tank in a colder temperature"
+          ],
+          "consequence": "Pressurization of the tank & PSV open",
+          "safeguards": [],
+          "recommendations": [],
+          "comments": "",
+          "minimized": false
+        }
+      ],
+      "page_number": 0
+    }
+  ]
+}
